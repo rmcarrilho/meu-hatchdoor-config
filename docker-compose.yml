@@ -1,0 +1,41 @@
+services:
+  hatchdoor:
+    image: battermanz/hatchdoor:latest
+    container_name: hatchdoor
+    env_file:
+      - .env
+    environment:
+      # This is the Docker deployment contract. Keep container paths and port
+      # aligned with the mounts and published port below; optional operator
+      # overrides belong in .env only when they intentionally pin a setting.
+      HOST: 0.0.0.0
+      PORT: "42824"
+      # The folder Hatchdoor can see. A fresh install starts with no Vaults;
+      # nothing in this folder becomes one until you add it.
+      VAULT_PATH: /data/vault
+      HATCHDOOR_CACHE_DB: /data/cache/hatchdoor-cache.sqlite3
+    ports:
+      - "42824:42824"
+    volumes:
+      - ${HOST_VAULT_PATH:-./vault}:/data/vault
+      - ${HOST_CACHE_PATH:-./data/cache}:/data/cache
+      # Vault identities and source definitions are authoritative instance
+      # state. Keep this mount across upgrades; it is not a rebuildable cache.
+      - ${HOST_STATE_PATH:-./data/state}:/data/state
+      # Model downloads and the local Gemma acceptance record persist across
+      # image upgrades. Bind-mount this directory to avoid re-downloading.
+      - ${HOST_MODELS_PATH:-./models}:/models
+    restart: unless-stopped
+    # Shutdown waits for an in-flight Git turn to reach a safe boundary. A
+    # remote that stalls mid-transfer is cut off after 15 s to connect plus
+    # 120 s of silence, so give the process longer than that before Docker's
+    # SIGKILL (the default grace is only 10 s).
+    stop_grace_period: 3m
+    healthcheck:
+      # Distroless runtime has no shell/curl, so the binary probes its own
+      # /health endpoint (which also pings SQLite) and exits non-zero on failure.
+      test: ["CMD", "/app/hatchdoor", "--healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
